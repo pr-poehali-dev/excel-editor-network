@@ -6,6 +6,7 @@ import TableEditor from '@/components/TableEditor';
 import RelationsSection from '@/components/RelationsSection';
 import ReportsSection from '@/components/ReportsSection';
 import ImportExportSection from '@/components/ImportExportSection';
+import ConnectionDialog, { ConnectionConfig, DEFAULT_CONFIG } from '@/components/ConnectionDialog';
 import Icon from '@/components/ui/icon';
 import type { Folder, TableData, Relation, Report } from '@/types';
 
@@ -84,6 +85,8 @@ const MENU_ITEMS: Record<string, { label: string; shortcut?: string; divider?: b
     { label: 'Горячие клавиши', shortcut: 'F1' },
     { label: 'divider', divider: true },
     { label: 'О программе' },
+    { label: 'divider', divider: true },
+    { label: 'Подключение к MySQL...' },
   ],
 };
 
@@ -99,6 +102,15 @@ export default function Index() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [lastSaved, setLastSaved] = useState<string>('Только что');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [connConfig, setConnConfig] = useState<ConnectionConfig>(() => {
+    try {
+      const saved = localStorage.getItem('mysql_connection');
+      return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+    } catch {
+      return DEFAULT_CONFIG;
+    }
+  });
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -138,7 +150,15 @@ export default function Index() {
       if (item === 'Отчёты') setSection('reports');
       if (item === 'Свернуть боковую панель') setSidebarCollapsed(s => !s);
     }
+    if (item === 'Подключение к MySQL...') setConnectionOpen(true);
   };
+
+  const handleSaveConnection = (cfg: ConnectionConfig) => {
+    setConnConfig(cfg);
+    localStorage.setItem('mysql_connection', JSON.stringify(cfg));
+  };
+
+
 
   const openTable = tables.find(t => t.id === openTableId);
 
@@ -204,6 +224,19 @@ export default function Index() {
           </div>
           <span className="text-gray-400 text-xs">{mockOnlineUsers.length} онлайн</span>
         </div>
+
+        {/* DB connection button */}
+        <button
+          onClick={() => setConnectionOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors border border-transparent hover:border-white/20 hover:bg-white/10"
+          title="Настройка подключения к MySQL"
+        >
+          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-green-400' : 'bg-yellow-400'} animate-pulse`} />
+          <span className={connConfig.database ? 'text-green-300' : 'text-yellow-300'}>
+            {connConfig.database ? `${connConfig.host}/${connConfig.database}` : 'Не подключено'}
+          </span>
+          <Icon name="Settings2" size={11} className="text-gray-400" />
+        </button>
 
         {/* Auto-save indicator */}
         <div className="flex items-center gap-1 text-xs text-gray-400 border-l border-gray-600 pl-3 ml-1">
@@ -342,10 +375,14 @@ export default function Index() {
 
       {/* Status bar */}
       <footer className="flex items-center gap-4 px-4 h-6 bg-[#217346] text-white text-[11px] flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse"></div>
-          <span>Подключено · MySQL</span>
-        </div>
+        <button
+          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+          onClick={() => setConnectionOpen(true)}
+          title="Настройка подключения"
+        >
+          <div className={`w-1.5 h-1.5 rounded-full ${connConfig.database ? 'bg-green-300 animate-pulse' : 'bg-yellow-300'}`} />
+          <span>{connConfig.database ? `MySQL · ${connConfig.host}:${connConfig.port}/${connConfig.database}` : 'MySQL · не настроено'}</span>
+        </button>
         <span className="text-green-200">·</span>
         <span>{tables.length} таблиц в базе</span>
         <span className="text-green-200">·</span>
@@ -356,6 +393,13 @@ export default function Index() {
           <span>Режим: совместный</span>
         </div>
       </footer>
+
+      <ConnectionDialog
+        open={connectionOpen}
+        onClose={() => setConnectionOpen(false)}
+        config={connConfig}
+        onSave={handleSaveConnection}
+      />
     </div>
   );
 }
