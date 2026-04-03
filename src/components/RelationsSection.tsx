@@ -14,6 +14,12 @@ export default function RelationsSection({ relations, tables, tableData, onRelat
   const [showAddRelation, setShowAddRelation] = useState(false);
   const [newRelation, setNewRelation] = useState<Partial<Relation>>({ type: 'one-to-many' });
   const [activeTab, setActiveTab] = useState<'relations' | 'keys'>('relations');
+  const [selectedTableId, setSelectedTableId] = useState<string>(tableData.id);
+  const [pendingPK, setPendingPK] = useState<string>(tableData.primaryKey || '');
+  const [fkState, setFkState] = useState<Record<string, { enabled: boolean; refTable: string }>>(
+    Object.fromEntries(tableData.columns.map(c => [c.id, { enabled: c.isForeignKey || false, refTable: c.referencesTable || '' }]))
+  );
+  const [keysSaved, setKeysSaved] = useState(false);
 
   const addRelation = () => {
     if (!newRelation.sourceTable || !newRelation.targetTable || !newRelation.sourceColumn || !newRelation.targetColumn) return;
@@ -213,18 +219,34 @@ export default function RelationsSection({ relations, tables, tableData, onRelat
 
         {activeTab === 'keys' && (
           <div className="max-w-2xl">
-            <div className="mb-6">
-              <h2 className="text-base font-semibold text-gray-800">Первичные ключи</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Укажите первичный ключ для таблицы «{tableData.name}»</p>
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h2 className="text-base font-semibold text-gray-800">Первичные и внешние ключи</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Настройте ключи для выбранной таблицы</p>
+              </div>
             </div>
-            <div className="border rounded-lg overflow-hidden">
+
+            {/* Table selector */}
+            <div className="mb-5">
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Таблица</label>
+              <select
+                className="w-full border rounded px-3 py-2.5 text-sm focus:outline-none focus:border-green-500 bg-white"
+                value={selectedTableId}
+                onChange={e => setSelectedTableId(e.target.value)}
+              >
+                {tables.map(t => <option key={t.id} value={t.id}>{t.name.replace('.xlsx', '')}</option>)}
+              </select>
+            </div>
+
+            <div className="border rounded-lg overflow-hidden mb-4">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b">
                     <th className="text-left px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide">Столбец</th>
                     <th className="text-left px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide">Тип данных</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide text-center">Первичный ключ</th>
-                    <th className="px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide text-center">Внешний ключ</th>
+                    <th className="px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide text-center">PK</th>
+                    <th className="px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide text-center">FK</th>
+                    <th className="px-4 py-2.5 font-medium text-gray-600 text-xs uppercase tracking-wide">Ссылается на</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -232,8 +254,8 @@ export default function RelationsSection({ relations, tables, tableData, onRelat
                     <tr key={col.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
-                          {col.isPrimaryKey && <Icon name="Key" size={13} className="text-yellow-500" />}
-                          {col.isForeignKey && <Icon name="Link" size={13} className="text-blue-500" />}
+                          {pendingPK === col.id && <Icon name="Key" size={13} className="text-yellow-500" />}
+                          {fkState[col.id]?.enabled && <Icon name="Link" size={13} className="text-blue-500" />}
                           <span className="font-medium">{col.name}</span>
                         </div>
                       </td>
@@ -243,27 +265,74 @@ export default function RelationsSection({ relations, tables, tableData, onRelat
                       <td className="px-4 py-2.5 text-center">
                         <input
                           type="radio"
-                          name="primaryKey"
-                          checked={col.isPrimaryKey || false}
-                          onChange={() => togglePrimaryKey(col.id)}
-                          className="w-4 h-4 accent-green-600"
+                          name="pendingPK"
+                          checked={pendingPK === col.id}
+                          onChange={() => setPendingPK(col.id)}
+                          className="w-4 h-4 accent-green-600 cursor-pointer"
                         />
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <input type="checkbox" checked={col.isForeignKey || false} readOnly className="w-4 h-4 accent-blue-600" />
-                          {col.isForeignKey && <span className="text-xs text-blue-600">→ {col.referencesTable}</span>}
-                        </div>
+                        <input
+                          type="checkbox"
+                          checked={fkState[col.id]?.enabled || false}
+                          onChange={e => setFkState(prev => ({ ...prev, [col.id]: { ...prev[col.id], enabled: e.target.checked } }))}
+                          className="w-4 h-4 accent-blue-600 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {fkState[col.id]?.enabled ? (
+                          <select
+                            className="text-xs border rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white"
+                            value={fkState[col.id]?.refTable || ''}
+                            onChange={e => setFkState(prev => ({ ...prev, [col.id]: { ...prev[col.id], refTable: e.target.value } }))}
+                          >
+                            <option value="">Выберите таблицу...</option>
+                            {tables.filter(t => t.id !== tableData.id).map(t => (
+                              <option key={t.id} value={t.name.replace('.xlsx', '')}>{t.name.replace('.xlsx', '')}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                onClick={() => {
+                  const updated = { ...tableData };
+                  updated.primaryKey = pendingPK;
+                  updated.columns = updated.columns.map(c => ({
+                    ...c,
+                    isPrimaryKey: c.id === pendingPK,
+                    isForeignKey: fkState[c.id]?.enabled || false,
+                    referencesTable: fkState[c.id]?.enabled ? fkState[c.id].refTable : undefined,
+                  }));
+                  onTableDataChange(updated);
+                  setKeysSaved(true);
+                  setTimeout(() => setKeysSaved(false), 3000);
+                }}
+              >
+                <Icon name="Save" size={14} />
+                Применить настройки
+              </button>
+              {keysSaved && (
+                <span className="flex items-center gap-1.5 text-sm text-green-600 animate-fade-in">
+                  <Icon name="CheckCircle2" size={14} />
+                  Сохранено
+                </span>
+              )}
+            </div>
+
             <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex gap-3">
               <Icon name="Info" size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div className="text-xs text-yellow-700">
-                <strong>Первичный ключ</strong> — уникальный идентификатор каждой строки. Используется для создания связей между таблицами и построения отчётов.
+                <strong>PK (первичный ключ)</strong> — уникальный идентификатор строки. <strong>FK (внешний ключ)</strong> — ссылка на строку в другой таблице. Используются для построения отчётов с объединением таблиц.
               </div>
             </div>
           </div>

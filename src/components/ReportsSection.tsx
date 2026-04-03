@@ -32,6 +32,34 @@ export default function ReportsSection({ reports, tables, relations, onReportsCh
   const [showResults, setShowResults] = useState(false);
   const [newReport, setNewReport] = useState<Partial<Report>>({ columns: [], filters: [], joinType: 'LEFT' });
 
+  const exportReport = (report: Report, format: 'csv' | 'json') => {
+    const headers = report.columns.map(c => c.columnName);
+    let data = '';
+    let mimeType = 'text/plain';
+    const filename = `${report.name}.${format}`;
+
+    if (format === 'csv') {
+      const rows = sampleReportData.map(r => Object.values(r).join(','));
+      data = [headers.join(','), ...rows].join('\n');
+      mimeType = 'text/csv;charset=utf-8;';
+    } else {
+      data = JSON.stringify({ report: report.name, columns: headers, rows: sampleReportData }, null, 2);
+      mimeType = 'application/json';
+    }
+
+    const blob = new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
   const deleteReport = (id: string) => {
     onReportsChange(reports.filter(r => r.id !== id));
     if (selectedReport?.id === id) setSelectedReport(null);
@@ -271,10 +299,34 @@ export default function ReportsSection({ reports, tables, relations, onReportsCh
                   <Icon name={showResults ? 'EyeOff' : 'Play'} size={14} />
                   {showResults ? 'Скрыть' : 'Выполнить'}
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 border text-sm rounded hover:bg-gray-50">
-                  <Icon name="Download" size={14} />
-                  Экспорт
-                </button>
+                <div className="relative">
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 border text-sm rounded hover:bg-gray-50"
+                    onClick={() => setExportMenuOpen(p => !p)}
+                  >
+                    <Icon name="Download" size={14} />
+                    Экспорт
+                    <Icon name="ChevronDown" size={12} />
+                  </button>
+                  {exportMenuOpen && (
+                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[160px] animate-fade-in">
+                      <button
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                        onClick={() => { exportReport(selectedReport!, 'csv'); setExportMenuOpen(false); }}
+                      >
+                        <Icon name="FileText" size={14} className="text-blue-500" />
+                        Скачать CSV
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 text-left"
+                        onClick={() => { exportReport(selectedReport!, 'json'); setExportMenuOpen(false); }}
+                      >
+                        <Icon name="Braces" size={14} className="text-purple-500" />
+                        Скачать JSON
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

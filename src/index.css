@@ -67,6 +67,21 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "PT Serif", Georgia, serif;
+  }
+
+  /* UI элементы (кнопки, метки, навигация) остаются на IBM Plex Sans */
+  button,
+  input,
+  select,
+  textarea,
+  label,
+  .font-ui,
+  nav,
+  header,
+  footer,
+  aside,
+  .toolbar-btn {
     font-family:
       "IBM Plex Sans",
       -apple-system,

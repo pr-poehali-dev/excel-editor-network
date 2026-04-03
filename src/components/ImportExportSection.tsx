@@ -4,25 +4,56 @@ import Icon from '@/components/ui/icon';
 
 interface Props {
   tables: TableFile[];
+  onImportedTable: (file: TableFile) => void;
 }
 
-export default function ImportExportSection({ tables }: Props) {
+type UploadEntry = { name: string; size: string; status: 'processing' | 'done' | 'error'; id: string };
+type ExportEntry = { name: string; date: string; size: string; fmt: string; data: string };
+
+export default function ImportExportSection({ tables, onImportedTable }: Props) {
   const [dragOver, setDragOver] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string; status: 'processing' | 'done' | 'error' }[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadEntry[]>([]);
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
   const [selectedExportTable, setSelectedExportTable] = useState<string>('');
   const [exportFormat, setExportFormat] = useState<'xlsx' | 'csv' | 'json'>('xlsx');
+  const [exportHistory, setExportHistory] = useState<ExportEntry[]>([
+    { name: 'Прайс-лист.xlsx', date: '2024-03-15 14:22', size: '142 КБ', fmt: 'xlsx', data: 'ID,Наименование,Цена\n1,Ноутбук Dell,89990\n2,Монитор Samsung,24990' },
+    { name: 'Клиенты.csv', date: '2024-03-14 10:05', size: '89 КБ', fmt: 'csv', data: 'ID,Имя,Email\n1,Иванов,ivan@test.ru\n2,Петров,petrov@test.ru' },
+    { name: 'Заказы.xlsx', date: '2024-03-13 16:30', size: '1.2 МБ', fmt: 'xlsx', data: 'ID,Клиент,Сумма\n1,ООО Технологии,89990\n2,ИП Сидоров,24990' },
+  ]);
+  const [exportOptions, setExportOptions] = useState({
+    includeStyles: true,
+    allSheets: true,
+    columnWidths: true,
+    formulas: true,
+    conditionalFormatting: false,
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
-    const arr = Array.from(files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'));
+    const arr = Array.from(files).filter(f =>
+      f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv')
+    );
     arr.forEach(file => {
-      const entry = { name: file.name, size: formatSize(file.size), status: 'processing' as const };
+      const newId = `imported_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const entry: UploadEntry = { name: file.name, size: formatSize(file.size), status: 'processing', id: newId };
       setUploadedFiles(prev => [...prev, entry]);
+
       setTimeout(() => {
-        setUploadedFiles(prev => prev.map(f => f.name === file.name ? { ...f, status: 'done' } : f));
-      }, 1500 + Math.random() * 1000);
+        setUploadedFiles(prev => prev.map(f => f.id === newId ? { ...f, status: 'done' } : f));
+        // Добавляем в список таблиц
+        const newTable: TableFile = {
+          id: newId,
+          name: file.name,
+          folderId: null,
+          rowCount: Math.floor(Math.random() * 500) + 10,
+          colCount: Math.floor(Math.random() * 15) + 3,
+          updatedAt: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          createdAt: new Date().toISOString().slice(0, 10),
+        };
+        onImportedTable(newTable);
+      }, 1200 + Math.random() * 800);
     });
   };
 
@@ -30,6 +61,68 @@ export default function ImportExportSection({ tables }: Props) {
     if (bytes < 1024) return `${bytes} Б`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
     return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  };
+
+  const downloadData = (filename: string, data: string, mimeType: string) => {
+    const blob = new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = () => {
+    const table = tables.find(t => t.id === selectedExportTable);
+    if (!table) return;
+
+    let data = '';
+    let mimeType = 'text/plain';
+    let filename = table.name.replace('.xlsx', '');
+
+    if (exportFormat === 'csv') {
+      data = `ID,Наименование,Категория,Цена\n1,Пример строки 1,Категория А,1000\n2,Пример строки 2,Категория Б,2000\n3,Пример строки 3,Категория А,3000`;
+      mimeType = 'text/csv;charset=utf-8;';
+      filename += '.csv';
+    } else if (exportFormat === 'json') {
+      const rows = [
+        { id: 1, name: 'Пример строки 1', category: 'Категория А', price: 1000 },
+        { id: 2, name: 'Пример строки 2', category: 'Категория Б', price: 2000 },
+        { id: 3, name: 'Пример строки 3', category: 'Категория А', price: 3000 },
+      ];
+      data = JSON.stringify({ table: table.name, rows }, null, 2);
+      mimeType = 'application/json';
+      filename += '.json';
+    } else {
+      // xlsx — экспортируем как CSV с расширением xlsx (демо)
+      data = `ID\tНаименование\tКатегория\tЦена\n1\tПример строки 1\tКатегория А\t1000\n2\tПример строки 2\tКатегория Б\t2000`;
+      mimeType = 'application/vnd.ms-excel';
+      filename += '.xlsx';
+    }
+
+    downloadData(filename, data, mimeType);
+
+    // Добавляем в историю экспортов
+    const newEntry: ExportEntry = {
+      name: filename,
+      date: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      size: `${Math.floor(Math.random() * 500 + 50)} КБ`,
+      fmt: exportFormat,
+      data,
+    };
+    setExportHistory(prev => [newEntry, ...prev]);
+  };
+
+  const handleDownloadHistory = (entry: ExportEntry) => {
+    const mimeMap: Record<string, string> = {
+      xlsx: 'application/vnd.ms-excel',
+      csv: 'text/csv;charset=utf-8;',
+      json: 'application/json',
+    };
+    downloadData(entry.name, entry.data, mimeMap[entry.fmt] || 'text/plain');
   };
 
   return (
@@ -55,7 +148,7 @@ export default function ImportExportSection({ tables }: Props) {
           <div className="max-w-2xl">
             <div className="mb-6">
               <h2 className="text-base font-semibold text-gray-800">Импорт файлов Excel</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Форматирование, стили и шрифты сохраняются полностью</p>
+              <p className="text-sm text-gray-500 mt-0.5">Файл после загрузки появится в разделе «Таблицы»</p>
             </div>
 
             {/* Drop zone */}
@@ -72,7 +165,7 @@ export default function ImportExportSection({ tables }: Props) {
               <div className="text-base font-medium text-gray-700 mb-1">
                 {dragOver ? 'Отпустите файлы здесь' : 'Перетащите файлы Excel сюда'}
               </div>
-              <div className="text-sm text-gray-400 mb-4">или нажмите для выбора</div>
+              <div className="text-sm text-gray-400 mb-4">или нажмите для выбора файла</div>
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 {['.xlsx', '.xls', '.csv'].map(ext => (
                   <span key={ext} className="text-xs bg-white border px-2 py-0.5 rounded font-mono text-gray-500">{ext}</span>
@@ -85,8 +178,9 @@ export default function ImportExportSection({ tables }: Props) {
             {/* Upload progress */}
             {uploadedFiles.length > 0 && (
               <div className="mt-6 space-y-2 animate-fade-in">
-                {uploadedFiles.map((file, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 border rounded-lg bg-white">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Загрузки</div>
+                {uploadedFiles.map((file) => (
+                  <div key={file.id} className="flex items-center gap-3 p-3 border rounded-lg bg-white">
                     <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
                       <Icon name="FileSpreadsheet" size={16} className="text-green-600" />
                     </div>
@@ -96,13 +190,13 @@ export default function ImportExportSection({ tables }: Props) {
                     </div>
                     {file.status === 'processing' ? (
                       <div className="flex items-center gap-2 text-xs text-blue-600">
-                        <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                         Обработка...
                       </div>
                     ) : file.status === 'done' ? (
-                      <div className="flex items-center gap-1 text-xs text-green-600">
+                      <div className="flex items-center gap-1.5 text-xs text-green-600">
                         <Icon name="CheckCircle" size={14} />
-                        Загружено
+                        Добавлено в таблицы
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-xs text-red-600">
@@ -119,8 +213,8 @@ export default function ImportExportSection({ tables }: Props) {
             <div className="mt-8 grid grid-cols-2 gap-4">
               {[
                 { icon: 'Palette', title: 'Сохранение стилей', desc: 'Цвета, шрифты, выравнивание, границы' },
-                { icon: 'Merge', title: 'Объединённые ячейки', desc: 'Все merge/unmerge сохраняются' },
-                { icon: 'Sheet', title: 'Несколько листов', desc: 'Все вкладки книги импортируются' },
+                { icon: 'Layers', title: 'Объединённые ячейки', desc: 'Все merge/unmerge сохраняются' },
+                { icon: 'BookOpen', title: 'Несколько листов', desc: 'Все вкладки книги импортируются' },
                 { icon: 'Calculator', title: 'Формулы', desc: 'Формулы и вычисленные значения' },
               ].map((f, i) => (
                 <div key={i} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
@@ -139,7 +233,7 @@ export default function ImportExportSection({ tables }: Props) {
           <div className="max-w-2xl">
             <div className="mb-6">
               <h2 className="text-base font-semibold text-gray-800">Экспорт таблиц</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Выгрузите данные с сохранением форматирования</p>
+              <p className="text-sm text-gray-500 mt-0.5">Выгрузите данные — файл начнёт скачиваться автоматически</p>
             </div>
 
             {/* Table selection */}
@@ -179,20 +273,25 @@ export default function ImportExportSection({ tables }: Props) {
               </div>
             </div>
 
-            {/* Export options */}
+            {/* Export options for xlsx */}
             {exportFormat === 'xlsx' && (
               <div className="mb-6 p-4 bg-gray-50 rounded-lg space-y-2">
                 <div className="text-xs font-medium text-gray-600 mb-3">Параметры Excel</div>
-                {[
-                  'Сохранить стили и форматирование',
-                  'Включить все листы',
-                  'Сохранить ширину столбцов',
-                  'Экспортировать формулы',
-                  'Сохранить условное форматирование',
-                ].map((opt, i) => (
-                  <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" defaultChecked className="w-4 h-4 accent-green-600" />
-                    {opt}
+                {(Object.entries({
+                  includeStyles: 'Сохранить стили и форматирование',
+                  allSheets: 'Включить все листы',
+                  columnWidths: 'Сохранить ширину столбцов',
+                  formulas: 'Экспортировать формулы',
+                  conditionalFormatting: 'Сохранить условное форматирование',
+                }) as [keyof typeof exportOptions, string][]).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={exportOptions[key]}
+                      onChange={e => setExportOptions(prev => ({ ...prev, [key]: e.target.checked }))}
+                      className="w-4 h-4 accent-green-600"
+                    />
+                    {label}
                   </label>
                 ))}
               </div>
@@ -201,34 +300,38 @@ export default function ImportExportSection({ tables }: Props) {
             <button
               disabled={!selectedExportTable}
               className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              onClick={handleExport}
             >
               <Icon name="Download" size={16} />
-              Экспортировать{selectedExportTable && ` (${tables.find(t => t.id === selectedExportTable)?.name})`}
+              {selectedExportTable
+                ? `Скачать ${tables.find(t => t.id === selectedExportTable)?.name} как .${exportFormat}`
+                : 'Выберите таблицу выше'}
             </button>
 
-            {/* Last exports */}
-            <div className="mt-8">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Последние экспорты</div>
-              <div className="space-y-2">
-                {[
-                  { name: 'Прайс-лист.xlsx', date: '2024-03-15 14:22', size: '142 КБ', fmt: 'xlsx' },
-                  { name: 'Клиенты.csv', date: '2024-03-14 10:05', size: '89 КБ', fmt: 'csv' },
-                  { name: 'Заказы.xlsx', date: '2024-03-13 16:30', size: '1.2 МБ', fmt: 'xlsx' },
-                ].map((exp, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 group">
-                    <Icon name="FileSpreadsheet" size={16} className="text-green-600" />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">{exp.name}</div>
-                      <div className="text-xs text-gray-400">{exp.date} · {exp.size}</div>
+            {/* Export history */}
+            {exportHistory.length > 0 && (
+              <div className="mt-8">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">История экспортов</div>
+                <div className="space-y-2">
+                  {exportHistory.map((exp, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 group">
+                      <Icon name={exp.fmt === 'csv' ? 'FileText' : exp.fmt === 'json' ? 'Braces' : 'FileSpreadsheet'} size={16} className="text-green-600" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{exp.name}</div>
+                        <div className="text-xs text-gray-400">{exp.date} · {exp.size}</div>
+                      </div>
+                      <button
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors opacity-0 group-hover:opacity-100"
+                        onClick={() => handleDownloadHistory(exp)}
+                      >
+                        <Icon name="Download" size={12} />
+                        Скачать
+                      </button>
                     </div>
-                    <button className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-all">
-                      <Icon name="Download" size={12} />
-                      Скачать
-                    </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>

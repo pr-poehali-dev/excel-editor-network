@@ -7,9 +7,10 @@ interface Props {
   tables: TableFile[];
   onOpenTable: (tableId: string) => void;
   onFoldersChange: (folders: Folder[]) => void;
+  onImportClick: () => void;
 }
 
-export default function TablesSection({ folders, tables, onOpenTable, onFoldersChange }: Props) {
+export default function TablesSection({ folders, tables, onOpenTable, onFoldersChange, onImportClick }: Props) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['f1', 'f2', 'f3']));
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
@@ -181,7 +182,10 @@ export default function TablesSection({ folders, tables, onOpenTable, onFoldersC
               <Icon name="LayoutGrid" size={14} />
             </button>
           </div>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors">
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+            onClick={onImportClick}
+          >
             <Icon name="Upload" size={14} />
             Импорт Excel
           </button>
