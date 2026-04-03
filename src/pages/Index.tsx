@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
-import { Section, TableFile } from '@/types';
-import { mockFolders, mockTables, mockTableData, mockRelations, mockReports, mockOnlineUsers } from '@/data/mockData';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Section, TableFile, Folder, TableData, Relation, Report } from '@/types';
+import { mockOnlineUsers } from '@/data/mockData';
 import TablesSection from '@/components/TablesSection';
 import TableEditor from '@/components/TableEditor';
 import RelationsSection from '@/components/RelationsSection';
@@ -8,7 +8,7 @@ import ReportsSection from '@/components/ReportsSection';
 import ImportExportSection from '@/components/ImportExportSection';
 import ConnectionDialog, { ConnectionConfig, DEFAULT_CONFIG } from '@/components/ConnectionDialog';
 import Icon from '@/components/ui/icon';
-import type { Folder, TableData, Relation, Report } from '@/types';
+import * as api from '@/lib/api';
 
 const NAV_ITEMS: { id: Section; label: string; icon: string; desc: string }[] = [
   { id: 'tables', label: 'Таблицы', icon: 'LayoutGrid', desc: 'Управление файлами и папками' },
@@ -90,53 +90,257 @@ const MENU_ITEMS: Record<string, { label: string; shortcut?: string; divider?: b
   ],
 };
 
+// Конвертирует ответ API → TableFile
+function rawToTableFile(r: api.RawTableList): TableFile {
+  return {
+    id: r.id, name: r.name, folderId: r.folderId,
+    rowCount: r.rowCount, colCount: r.colCount,
+    updatedAt: r.updatedAt, createdAt: r.createdAt,
+  };
+}
+
+// Конвертирует ответ API → Folder
+function rawToFolder(r: api.RawFolder): Folder {
+  return { id: r.id, name: r.name, parentId: r.parent_id, createdAt: r.created_at };
+}
+
+// Конвертирует полную таблицу API → TableData
+function rawToTableData(r: api.RawTableFull): TableData {
+  return {
+    id: r.id,
+    name: r.name,
+    primaryKey: r.primaryKey || undefined,
+    columns: (r.columns || []).map(c => ({
+      id: c.id, name: c.name,
+      type: c.type as 'string' | 'number' | 'date' | 'boolean',
+      isPrimaryKey: c.isPrimaryKey,
+      isForeignKey: c.isForeignKey,
+      referencesTable: c.referencesTable || undefined,
+      referencesColumn: c.referencesColumn || undefined,
+    })),
+    sheets: (r.sheets || []).map(s => ({
+      id: s.id, name: s.name,
+      cells: Object.fromEntries(
+        Object.entries(s.cells || {}).map(([addr, cell]) => [
+          addr,
+          {
+            value: cell.value,
+            formula: cell.formula || undefined,
+            style: (cell.style && Object.keys(cell.style).length > 0) ? cell.style as Record<string, unknown> : undefined,
+          },
+        ])
+      ),
+      columnWidths: s.columnWidths || {},
+      rowHeights: s.rowHeights || {},
+      frozenRows: s.frozenRows || 0,
+      frozenCols: s.frozenCols || 0,
+    })),
+  };
+}
+
 export default function Index() {
   const [section, setSection] = useState<Section>('tables');
-  const [folders, setFolders] = useState<Folder[]>(mockFolders);
-  const [tables, setTables] = useState<TableFile[]>(mockTables);
-  const [tableData, setTableData] = useState<TableData>(mockTableData);
-  const [tableDataMap, setTableDataMap] = useState<Record<string, TableData>>({ [mockTableData.id]: mockTableData });
-  const [relations, setRelations] = useState<Relation[]>(mockRelations);
-  const [reports, setReports] = useState<Report[]>(mockReports);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [tables, setTables] = useState<TableFile[]>([]);
+  const [tableData, setTableData] = useState<TableData | null>(null);
+  const [tableDataMap, setTableDataMap] = useState<Record<string, TableData>>({});
+  const [relations, setRelations] = useState<Relation[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [openTableId, setOpenTableId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [lastSaved, setLastSaved] = useState<string>('Только что');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [connConfig, setConnConfig] = useState<ConnectionConfig>(() => {
-    try {
-      const saved = localStorage.getItem('mysql_connection');
-      return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
-    } catch {
-      return DEFAULT_CONFIG;
-    }
+    try { return JSON.parse(localStorage.getItem('mysql_connection') || 'null') || DEFAULT_CONFIG; }
+    catch { return DEFAULT_CONFIG; }
   });
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Закрытие меню по клику вне
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+    const h = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const handleOpenTable = (tableId: string) => {
+  // Начальная загрузка всех данных из БД
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [foldersRaw, tablesRaw, relationsRaw, reportsRaw] = await Promise.all([
+        api.getFolders(),
+        api.getTables(),
+        api.getRelations(),
+        api.getReports(),
+      ]);
+      setFolders(foldersRaw.map(rawToFolder));
+      setTables(tablesRaw.map(rawToTableFile));
+
+      // Строим tableDataMap из данных, пришедших со списком таблиц
+      const tdMap: Record<string, TableData> = {};
+      for (const raw of tablesRaw) {
+        // Получаем полные данные для каждой таблицы
+        const full = await api.getTable(raw.id);
+        const td = rawToTableData(full);
+        tdMap[raw.id] = td;
+      }
+      setTableDataMap(tdMap);
+      if (Object.keys(tdMap).length > 0) {
+        const first = Object.values(tdMap)[0];
+        setTableData(first);
+      }
+
+      setRelations(relationsRaw.map(r => ({
+        id: r.id, sourceTable: r.sourceTable, sourceColumn: r.sourceColumn,
+        targetTable: r.targetTable, targetColumn: r.targetColumn,
+        type: r.type as Relation['type'],
+      })));
+
+      setReports(reportsRaw.map(r => ({
+        id: r.id, name: r.name, description: r.description,
+        columns: r.columns as Report['columns'],
+        filters: r.filters as Report['filters'],
+        joinType: r.joinType as Report['joinType'],
+        createdAt: r.createdAt,
+      })));
+    } catch (e) {
+      setLoadError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // ─── HANDLERS ────────────────────────────────────────────────────────────
+
+  const handleOpenTable = async (tableId: string) => {
     setOpenTableId(tableId);
     setSection('editor');
+    if (!tableDataMap[tableId]) {
+      try {
+        const full = await api.getTable(tableId);
+        const td = rawToTableData(full);
+        setTableDataMap(prev => ({ ...prev, [tableId]: td }));
+        setTableData(td);
+      } catch (e) {
+        console.error('Failed to load table:', e);
+      }
+    } else {
+      setTableData(tableDataMap[tableId]);
+    }
   };
 
-  const handleImportedTable = (file: TableFile, data: TableData) => {
-    setTables(prev => [...prev, file]);
-    setTableDataMap(prev => ({ ...prev, [file.id]: data }));
-  };
-
-  const handleTableChange = (data: TableData) => {
+  const handleTableChange = async (data: TableData) => {
     setTableData(data);
     setTableDataMap(prev => ({ ...prev, [data.id]: data }));
-    setLastSaved('Только что');
+    setLastSaved('Сохранение...');
+    try {
+      // Сохраняем ячейки активного листа
+      for (const sheet of data.sheets) {
+        await api.saveCells({
+          tableId: data.id,
+          sheetId: sheet.id,
+          cells: sheet.cells,
+          columns: data.columns,
+          sheets: data.sheets.map(s => ({
+            id: s.id,
+            columnWidths: s.columnWidths,
+            rowHeights: s.rowHeights,
+          })),
+          rowCount: Object.keys(sheet.cells).length > 0
+            ? Math.max(...Object.keys(sheet.cells).map(k => parseInt(k.replace(/\D/g, ''), 10)).filter(n => !isNaN(n)))
+            : 0,
+          colCount: data.columns.length,
+          primaryKey: data.primaryKey,
+        });
+      }
+      setLastSaved('Сохранено');
+    } catch (e) {
+      setLastSaved('Ошибка сохранения');
+      console.error('Save error:', e);
+    }
+  };
+
+  const handleImportedTable = async (file: TableFile, data: TableData) => {
+    try {
+      await api.createTable({
+        id: file.id,
+        name: file.name,
+        folderId: file.folderId,
+        rowCount: file.rowCount,
+        colCount: file.colCount,
+        columns: data.columns,
+        sheets: data.sheets.map(s => ({
+          id: s.id, name: s.name,
+          columnWidths: s.columnWidths, rowHeights: s.rowHeights,
+          cells: s.cells,
+        })),
+      });
+      setTables(prev => [...prev, file]);
+      setTableDataMap(prev => ({ ...prev, [file.id]: data }));
+    } catch (e) {
+      console.error('Import error:', e);
+    }
+  };
+
+  const handleFoldersChange = async (newFolders: Folder[]) => {
+    // Определяем новые папки (которых нет в текущем state)
+    const currentIds = new Set(folders.map(f => f.id));
+    const added = newFolders.filter(f => !currentIds.has(f.id));
+    const removed = folders.filter(f => !newFolders.find(nf => nf.id === f.id));
+    const updated = newFolders.filter(f => {
+      const old = folders.find(of => of.id === f.id);
+      return old && old.name !== f.name;
+    });
+
+    setFolders(newFolders);
+
+    for (const f of added) {
+      await api.createFolder({ id: f.id, name: f.name, parent_id: f.parentId, created_at: f.createdAt });
+    }
+    for (const f of removed) {
+      await api.deleteFolder(f.id);
+    }
+    for (const f of updated) {
+      await api.updateFolder(f.id, { name: f.name });
+    }
+  };
+
+  const handleRelationsChange = async (newRelations: Relation[]) => {
+    const currentIds = new Set(relations.map(r => r.id));
+    const added = newRelations.filter(r => !currentIds.has(r.id));
+    const removed = relations.filter(r => !newRelations.find(nr => nr.id === r.id));
+
+    setRelations(newRelations);
+
+    for (const r of added) {
+      await api.createRelation(r);
+    }
+    for (const r of removed) {
+      await api.deleteRelation(r.id);
+    }
+  };
+
+  const handleReportsChange = async (newReports: Report[]) => {
+    const currentIds = new Set(reports.map(r => r.id));
+    const added = newReports.filter(r => !currentIds.has(r.id));
+    const removed = reports.filter(r => !newReports.find(nr => nr.id === r.id));
+
+    setReports(newReports);
+
+    for (const r of added) {
+      await api.createReport(r);
+    }
+    for (const r of removed) {
+      await api.deleteReport(r.id);
+    }
   };
 
   const handleMenuAction = (menu: string, item: string) => {
@@ -158,13 +362,12 @@ export default function Index() {
     localStorage.setItem('mysql_connection', JSON.stringify(cfg));
   };
 
-
-
   const openTable = tables.find(t => t.id === openTableId);
+  const activeTableData = (openTableId && tableDataMap[openTableId]) || tableData;
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
-      {/* Top header bar */}
+      {/* Top header */}
       <header className="flex items-center h-10 bg-[#1e2332] px-3 gap-3 flex-shrink-0 relative z-50">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 bg-green-600 rounded flex items-center justify-center">
@@ -190,11 +393,9 @@ export default function Index() {
                     item.divider ? (
                       <div key={i} className="border-t border-gray-100 my-1" />
                     ) : (
-                      <button
-                        key={i}
+                      <button key={i}
                         className="w-full flex items-center justify-between px-4 py-1.5 text-xs text-gray-700 hover:bg-green-50 hover:text-green-800 text-left transition-colors"
-                        onClick={() => handleMenuAction(menuName, item.label)}
-                      >
+                        onClick={() => handleMenuAction(menuName, item.label)}>
                         <span>{item.label}</span>
                         {item.shortcut && <span className="text-gray-400 ml-8">{item.shortcut}</span>}
                       </button>
@@ -212,12 +413,9 @@ export default function Index() {
         <div className="flex items-center gap-2">
           <div className="flex -space-x-1">
             {mockOnlineUsers.map(u => (
-              <div
-                key={u.id}
+              <div key={u.id}
                 className="w-6 h-6 rounded-full border-2 border-[#1e2332] flex items-center justify-center text-white text-[10px] font-bold cursor-default"
-                style={{ backgroundColor: u.color }}
-                title={`${u.name} — активен`}
-              >
+                style={{ backgroundColor: u.color }} title={`${u.name} — активен`}>
                 {u.name.charAt(0)}
               </div>
             ))}
@@ -226,11 +424,9 @@ export default function Index() {
         </div>
 
         {/* DB connection button */}
-        <button
-          onClick={() => setConnectionOpen(true)}
+        <button onClick={() => setConnectionOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors border border-transparent hover:border-white/20 hover:bg-white/10"
-          title="Настройка подключения к MySQL"
-        >
+          title="Настройка подключения к MySQL">
           <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-green-400' : 'bg-yellow-400'} animate-pulse`} />
           <span className={connConfig.database ? 'text-green-300' : 'text-yellow-300'}>
             {connConfig.database ? `${connConfig.host}/${connConfig.database}` : 'Не подключено'}
@@ -250,23 +446,18 @@ export default function Index() {
         <aside className={`flex flex-col bg-[#252b3d] transition-all duration-200 flex-shrink-0 ${sidebarCollapsed ? 'w-12' : 'w-52'}`}>
           <div className={`flex items-center h-10 border-b border-[#1e2332] ${sidebarCollapsed ? 'justify-center' : 'px-3 justify-between'}`}>
             {!sidebarCollapsed && <span className="text-gray-400 text-[10px] font-semibold uppercase tracking-widest">Навигация</span>}
-            <button
-              className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors"
+            <button className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors"
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}
-            >
+              title={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}>
               <Icon name={sidebarCollapsed ? 'PanelLeftOpen' : 'PanelLeftClose'} size={14} />
             </button>
           </div>
 
           <nav className="flex-1 py-2 space-y-0.5 px-1.5">
             {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setSection(item.id)}
+              <button key={item.id} onClick={() => setSection(item.id)}
                 className={`w-full flex items-center gap-2.5 px-2 py-2 rounded text-left transition-all ${section === item.id ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}
-                title={sidebarCollapsed ? item.label : ''}
-              >
+                title={sidebarCollapsed ? item.label : ''}>
                 <Icon name={item.icon as 'Table2'} size={15} className="flex-shrink-0" />
                 {!sidebarCollapsed && (
                   <div className="min-w-0">
@@ -289,7 +480,7 @@ export default function Index() {
               </div>
               <div className="flex items-center gap-1 text-[10px] text-gray-500">
                 <Icon name="Database" size={10} />
-                <span>MySQL · {tables.length} таблиц · {folders.length} папок</span>
+                <span>PostgreSQL · {tables.length} таблиц · {folders.length} папок</span>
               </div>
             </div>
           )}
@@ -297,6 +488,7 @@ export default function Index() {
 
         {/* Main content */}
         <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Breadcrumb */}
           <div className="flex items-center gap-2 px-4 py-2 bg-white border-b text-xs text-gray-500 flex-shrink-0">
             <Icon name="Home" size={12} />
             <Icon name="ChevronRight" size={12} className="text-gray-300" />
@@ -311,6 +503,8 @@ export default function Index() {
               </>
             )}
             <div className="ml-auto flex items-center gap-3">
+              {loading && <span className="text-gray-400 flex items-center gap-1"><div className="w-2.5 h-2.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />Загрузка...</span>}
+              {loadError && <span className="text-red-500 text-xs" title={loadError}>Ошибка загрузки</span>}
               {section === 'editor' && (
                 <>
                   <span className="flex items-center gap-1 text-green-600">
@@ -332,24 +526,32 @@ export default function Index() {
                 folders={folders}
                 tables={tables}
                 onOpenTable={handleOpenTable}
-                onFoldersChange={setFolders}
+                onFoldersChange={handleFoldersChange}
                 onImportClick={() => setSection('import')}
               />
             )}
-            {section === 'editor' && (
+            {section === 'editor' && activeTableData && (
               <TableEditor
-                tableData={tableData}
+                tableData={activeTableData}
                 onTableChange={handleTableChange}
                 onlineUsers={mockOnlineUsers}
               />
+            )}
+            {section === 'editor' && !activeTableData && !loading && (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <div className="text-center">
+                  <Icon name="Table2" size={40} className="mx-auto mb-3 opacity-20" />
+                  <div className="text-sm">Выберите таблицу из раздела «Таблицы»</div>
+                </div>
+              </div>
             )}
             {section === 'relations' && (
               <RelationsSection
                 relations={relations}
                 tables={tables}
-                tableData={tableData}
+                tableData={activeTableData || { id: '', name: '', sheets: [], columns: [] }}
                 tableDataMap={tableDataMap}
-                onRelationsChange={setRelations}
+                onRelationsChange={handleRelationsChange}
                 onTableDataChange={handleTableChange}
               />
             )}
@@ -359,7 +561,7 @@ export default function Index() {
                 tables={tables}
                 relations={relations}
                 tableDataMap={tableDataMap}
-                onReportsChange={setReports}
+                onReportsChange={handleReportsChange}
               />
             )}
             {section === 'import' && (
@@ -375,16 +577,13 @@ export default function Index() {
 
       {/* Status bar */}
       <footer className="flex items-center gap-4 px-4 h-6 bg-[#217346] text-white text-[11px] flex-shrink-0">
-        <button
-          className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-          onClick={() => setConnectionOpen(true)}
-          title="Настройка подключения"
-        >
-          <div className={`w-1.5 h-1.5 rounded-full ${connConfig.database ? 'bg-green-300 animate-pulse' : 'bg-yellow-300'}`} />
-          <span>{connConfig.database ? `MySQL · ${connConfig.host}:${connConfig.port}/${connConfig.database}` : 'MySQL · не настроено'}</span>
+        <button className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+          onClick={() => setConnectionOpen(true)} title="Настройка подключения">
+          <div className={`w-1.5 h-1.5 rounded-full ${!loading ? 'bg-green-300 animate-pulse' : 'bg-yellow-300'}`} />
+          <span>{loading ? 'Подключение...' : `PostgreSQL · ${tables.length} таблиц`}</span>
         </button>
         <span className="text-green-200">·</span>
-        <span>{tables.length} таблиц в базе</span>
+        <span>{folders.length} папок</span>
         <span className="text-green-200">·</span>
         <span>{mockOnlineUsers.length} пользователей онлайн</span>
         <div className="ml-auto flex items-center gap-3">

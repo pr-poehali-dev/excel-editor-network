@@ -1,0 +1,47 @@
+{
+  "tests": [
+    {
+      "name": "Healthcheck",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "ok"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Seed initial data",
+      "method": "POST",
+      "path": "/?action=seed",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET folders",
+      "method": "GET",
+      "path": "/?resource=folders",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET tables",
+      "method": "GET",
+      "path": "/?resource=tables",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET relations",
+      "method": "GET",
+      "path": "/?resource=relations",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET reports",
+      "method": "GET",
+      "path": "/?resource=reports",
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
