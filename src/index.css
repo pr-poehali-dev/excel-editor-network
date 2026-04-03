@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* PT Astra Serif — шрифт Паратайп для таблиц */
+@font-face {
+  font-family: "PT Astra Serif";
+  src: url("https://fonts.gstatic.com/s/ptserif/v18/EJRVQgYoZZY2vCFuvAFT_r21cg.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Astra Serif";
+  src: url("https://fonts.gstatic.com/s/ptserif/v18/EJRSQgYoZZY2vCFuvAnt65qVjSk.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     --background: 220 14% 96%;
@@ -67,7 +85,13 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "PT Serif", Georgia, serif;
+    font-family: "PT Astra Serif", "PT Serif", Georgia, serif;
+  }
+
+  /* Ячейки таблицы — PT Astra Serif */
+  .excel-cell,
+  .table-cell-text {
+    font-family: "PT Astra Serif", "PT Serif", Georgia, serif !important;
   }
 
   /* UI элементы (кнопки, метки, навигация) остаются на IBM Plex Sans */
@@ -115,7 +139,7 @@
 .excel-grid {
   border-collapse: collapse;
   font-size: 13px;
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: "PT Astra Serif", "PT Serif", Georgia, serif;
 }
 
 .excel-grid th {

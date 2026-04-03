@@ -17,10 +17,11 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				sans: ['PT Serif', 'serif'],
-				serif: ['PT Serif', 'serif'],
-				ui: ['IBM Plex Sans', 'sans-serif'],
-				mono: ['IBM Plex Mono', 'monospace'],
+				sans: ['"PT Astra Serif"', '"PT Serif"', 'Georgia', 'serif'],
+				serif: ['"PT Astra Serif"', '"PT Serif"', 'Georgia', 'serif'],
+				ui: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+				mono: ['"IBM Plex Mono"', 'monospace'],
+				astra: ['"PT Astra Serif"', '"PT Serif"', 'Georgia', 'serif'],
 			},
 			colors: {
 				border: 'hsl(var(--border))',

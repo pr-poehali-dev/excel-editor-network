@@ -92,6 +92,7 @@ export default function Index() {
   const [folders, setFolders] = useState<Folder[]>(mockFolders);
   const [tables, setTables] = useState<TableFile[]>(mockTables);
   const [tableData, setTableData] = useState<TableData>(mockTableData);
+  const [tableDataMap, setTableDataMap] = useState<Record<string, TableData>>({ [mockTableData.id]: mockTableData });
   const [relations, setRelations] = useState<Relation[]>(mockRelations);
   const [reports, setReports] = useState<Report[]>(mockReports);
   const [openTableId, setOpenTableId] = useState<string | null>(null);
@@ -110,18 +111,20 @@ export default function Index() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleTableChange = (data: TableData) => {
-    setTableData(data);
-    setLastSaved('Только что');
-  };
-
   const handleOpenTable = (tableId: string) => {
     setOpenTableId(tableId);
     setSection('editor');
   };
 
-  const handleImportedTable = (file: TableFile) => {
+  const handleImportedTable = (file: TableFile, data: TableData) => {
     setTables(prev => [...prev, file]);
+    setTableDataMap(prev => ({ ...prev, [file.id]: data }));
+  };
+
+  const handleTableChange = (data: TableData) => {
+    setTableData(data);
+    setTableDataMap(prev => ({ ...prev, [data.id]: data }));
+    setLastSaved('Только что');
   };
 
   const handleMenuAction = (menu: string, item: string) => {
@@ -312,8 +315,9 @@ export default function Index() {
                 relations={relations}
                 tables={tables}
                 tableData={tableData}
+                tableDataMap={tableDataMap}
                 onRelationsChange={setRelations}
-                onTableDataChange={setTableData}
+                onTableDataChange={handleTableChange}
               />
             )}
             {section === 'reports' && (
@@ -321,12 +325,14 @@ export default function Index() {
                 reports={reports}
                 tables={tables}
                 relations={relations}
+                tableDataMap={tableDataMap}
                 onReportsChange={setReports}
               />
             )}
             {section === 'import' && (
               <ImportExportSection
                 tables={tables}
+                tableDataMap={tableDataMap}
                 onImportedTable={handleImportedTable}
               />
             )}

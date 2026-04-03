@@ -116,6 +116,8 @@ export default function TableEditor({ tableData, onTableChange, onlineUsers }: P
         {/* Formatting row */}
         <div className="flex items-center gap-1 px-3 py-1.5 flex-wrap">
           <select className="text-xs border rounded px-1 py-0.5 bg-white h-7 focus:outline-none focus:border-green-500 mr-1">
+            <option>PT Astra Serif</option>
+            <option>PT Serif</option>
             <option>IBM Plex Sans</option>
             <option>Arial</option>
             <option>Times New Roman</option>
