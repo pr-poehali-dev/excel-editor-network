@@ -1,93 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Section, TableFile, Folder, TableData, Relation, Report } from '@/types';
-import TablesSection from '@/components/TablesSection';
-import TableEditor from '@/components/TableEditor';
-import RelationsSection from '@/components/RelationsSection';
-import ReportsSection from '@/components/ReportsSection';
-import ImportExportSection from '@/components/ImportExportSection';
-import ConnectionDialog, { ConnectionConfig, DEFAULT_CONFIG } from '@/components/ConnectionDialog';
-import Icon from '@/components/ui/icon';
+import { ConnectionConfig, DEFAULT_CONFIG } from '@/components/ConnectionDialog';
+import ConnectionDialog from '@/components/ConnectionDialog';
+import AppHeader from '@/components/layout/AppHeader';
+import AppSidebar from '@/components/layout/AppSidebar';
+import MainContent from '@/components/layout/MainContent';
+import AppStatusBar from '@/components/layout/AppStatusBar';
 import * as api from '@/lib/api';
-
-const NAV_ITEMS: { id: Section; label: string; icon: string; desc: string }[] = [
-  { id: 'tables', label: 'Таблицы', icon: 'LayoutGrid', desc: 'Управление файлами и папками' },
-  { id: 'editor', label: 'Редактор', icon: 'Table2', desc: 'Редактирование ячеек' },
-  { id: 'relations', label: 'Связи', icon: 'GitBranch', desc: 'Связи и ключи' },
-  { id: 'reports', label: 'Отчёты', icon: 'BarChart3', desc: 'Конструктор запросов' },
-  { id: 'import', label: 'Импорт/Экспорт', icon: 'ArrowLeftRight', desc: 'Загрузка и выгрузка' },
-];
-
-const MENU_ITEMS: Record<string, { label: string; shortcut?: string; divider?: boolean }[]> = {
-  'Файл': [
-    { label: 'Новая таблица', shortcut: 'Ctrl+N' },
-    { label: 'Открыть файл...', shortcut: 'Ctrl+O' },
-    { label: 'divider', divider: true },
-    { label: 'Сохранить', shortcut: 'Ctrl+S' },
-    { label: 'Сохранить как...', shortcut: 'Ctrl+Shift+S' },
-    { label: 'divider', divider: true },
-    { label: 'Импорт Excel...' },
-    { label: 'Экспорт...' },
-    { label: 'divider', divider: true },
-    { label: 'Закрыть', shortcut: 'Ctrl+W' },
-  ],
-  'Правка': [
-    { label: 'Отменить', shortcut: 'Ctrl+Z' },
-    { label: 'Повторить', shortcut: 'Ctrl+Y' },
-    { label: 'divider', divider: true },
-    { label: 'Вырезать', shortcut: 'Ctrl+X' },
-    { label: 'Копировать', shortcut: 'Ctrl+C' },
-    { label: 'Вставить', shortcut: 'Ctrl+V' },
-    { label: 'divider', divider: true },
-    { label: 'Найти и заменить', shortcut: 'Ctrl+H' },
-  ],
-  'Вид': [
-    { label: 'Таблицы', shortcut: 'Alt+1' },
-    { label: 'Редактор', shortcut: 'Alt+2' },
-    { label: 'Связи', shortcut: 'Alt+3' },
-    { label: 'Отчёты', shortcut: 'Alt+4' },
-    { label: 'divider', divider: true },
-    { label: 'Свернуть боковую панель' },
-    { label: 'Полноэкранный режим', shortcut: 'F11' },
-  ],
-  'Вставка': [
-    { label: 'Строку выше' },
-    { label: 'Строку ниже' },
-    { label: 'divider', divider: true },
-    { label: 'Столбец слева' },
-    { label: 'Столбец справа' },
-    { label: 'divider', divider: true },
-    { label: 'Новый лист' },
-  ],
-  'Формат': [
-    { label: 'Жирный', shortcut: 'Ctrl+B' },
-    { label: 'Курсив', shortcut: 'Ctrl+I' },
-    { label: 'Подчёркивание', shortcut: 'Ctrl+U' },
-    { label: 'divider', divider: true },
-    { label: 'Выравнивание по левому краю' },
-    { label: 'Выравнивание по центру' },
-    { label: 'Выравнивание по правому краю' },
-    { label: 'divider', divider: true },
-    { label: 'Условное форматирование...' },
-  ],
-  'Данные': [
-    { label: 'Сортировка по возрастанию' },
-    { label: 'Сортировка по убыванию' },
-    { label: 'divider', divider: true },
-    { label: 'Фильтр...' },
-    { label: 'Снять фильтры' },
-    { label: 'divider', divider: true },
-    { label: 'Проверка данных...' },
-    { label: 'Удалить дубликаты...' },
-  ],
-  'Справка': [
-    { label: 'Документация' },
-    { label: 'Горячие клавиши', shortcut: 'F1' },
-    { label: 'divider', divider: true },
-    { label: 'О программе' },
-    { label: 'divider', divider: true },
-    { label: 'Подключение к PostgreSQL...' },
-  ],
-};
 
 // Конвертирует ответ API → TableFile
 function rawToTableFile(r: api.RawTableList): TableFile {
@@ -156,16 +75,6 @@ export default function Index() {
     try { return JSON.parse(localStorage.getItem('mysql_connection') || 'null') || DEFAULT_CONFIG; }
     catch { return DEFAULT_CONFIG; }
   });
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Закрытие меню по клику вне
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(null);
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
 
   // Начальная загрузка всех данных из БД
   const loadAll = useCallback(async () => {
@@ -181,10 +90,8 @@ export default function Index() {
       setFolders(foldersRaw.map(rawToFolder));
       setTables(tablesRaw.map(rawToTableFile));
 
-      // Строим tableDataMap из данных, пришедших со списком таблиц
       const tdMap: Record<string, TableData> = {};
       for (const raw of tablesRaw) {
-        // Получаем полные данные для каждой таблицы
         const full = await api.getTable(raw.id);
         const td = rawToTableData(full);
         tdMap[raw.id] = td;
@@ -241,7 +148,6 @@ export default function Index() {
     setTableDataMap(prev => ({ ...prev, [data.id]: data }));
     setLastSaved('Сохранение...');
     try {
-      // Сохраняем ячейки активного листа
       for (const sheet of data.sheets) {
         await api.saveCells({
           tableId: data.id,
@@ -290,7 +196,6 @@ export default function Index() {
   };
 
   const handleFoldersChange = async (newFolders: Folder[]) => {
-    // Определяем новые папки (которых нет в текущем state)
     const currentIds = new Set(folders.map(f => f.id));
     const added = newFolders.filter(f => !currentIds.has(f.id));
     const removed = folders.filter(f => !newFolders.find(nf => nf.id === f.id));
@@ -366,218 +271,56 @@ export default function Index() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
-      {/* Top header */}
-      <header className="flex items-center h-10 bg-[#1e2332] px-3 gap-3 flex-shrink-0 relative z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-green-600 rounded flex items-center justify-center">
-            <Icon name="Table2" size={14} className="text-white" />
-          </div>
-          <span className="text-white font-semibold text-sm tracking-tight">DataGrid</span>
-          <span className="text-gray-500 text-xs ml-1">v1.0</span>
-        </div>
-
-        {/* Menu bar */}
-        <div className="flex items-center gap-0.5 ml-2 relative" ref={menuRef}>
-          {Object.keys(MENU_ITEMS).map(menuName => (
-            <div key={menuName} className="relative">
-              <button
-                className={`text-gray-300 hover:text-white text-xs px-2.5 py-1 rounded transition-colors ${openMenu === menuName ? 'bg-white/20 text-white' : 'hover:bg-white/10'}`}
-                onClick={() => setOpenMenu(openMenu === menuName ? null : menuName)}
-              >
-                {menuName}
-              </button>
-              {openMenu === menuName && (
-                <div className="absolute top-full left-0 mt-0.5 bg-white border border-gray-200 rounded-md shadow-xl py-1 z-[100] min-w-[200px] animate-fade-in">
-                  {MENU_ITEMS[menuName].map((item, i) =>
-                    item.divider ? (
-                      <div key={i} className="border-t border-gray-100 my-1" />
-                    ) : (
-                      <button key={i}
-                        className="w-full flex items-center justify-between px-4 py-1.5 text-xs text-gray-700 hover:bg-green-50 hover:text-green-800 text-left transition-colors"
-                        onClick={() => handleMenuAction(menuName, item.label)}>
-                        <span>{item.label}</span>
-                        {item.shortcut && <span className="text-gray-400 ml-8">{item.shortcut}</span>}
-                      </button>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="flex-1" />
-
-        {/* DB connection button */}
-        <button onClick={() => setConnectionOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors border border-transparent hover:border-white/20 hover:bg-white/10"
-          title="Настройка подключения к PostgreSQL">
-          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-blue-400' : 'bg-yellow-400'} animate-pulse`} />
-          <span className={connConfig.database ? 'text-blue-300' : 'text-yellow-300'}>
-            {connConfig.database ? `${connConfig.host}/${connConfig.database}` : 'Не подключено'}
-          </span>
-          <Icon name="Settings2" size={11} className="text-gray-400" />
-        </button>
-
-        {/* Auto-save indicator */}
-        <div className="flex items-center gap-1 text-xs text-gray-400 border-l border-gray-600 pl-3 ml-1">
-          <Icon name="Cloud" size={12} className="text-green-400" />
-          <span>Сохранено: {lastSaved}</span>
-        </div>
-      </header>
+      <AppHeader
+        openMenu={openMenu}
+        setOpenMenu={setOpenMenu}
+        onMenuAction={handleMenuAction}
+        connConfig={connConfig}
+        lastSaved={lastSaved}
+        onConnectionClick={() => setConnectionOpen(true)}
+      />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar */}
-        <aside className={`flex flex-col bg-[#252b3d] transition-all duration-200 flex-shrink-0 ${sidebarCollapsed ? 'w-12' : 'w-52'}`}>
-          <div className={`flex items-center h-10 border-b border-[#1e2332] ${sidebarCollapsed ? 'justify-center' : 'px-3 justify-between'}`}>
-            {!sidebarCollapsed && <span className="text-gray-400 text-[10px] font-semibold uppercase tracking-widest">Навигация</span>}
-            <button className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title={sidebarCollapsed ? 'Развернуть' : 'Свернуть'}>
-              <Icon name={sidebarCollapsed ? 'PanelLeftOpen' : 'PanelLeftClose'} size={14} />
-            </button>
-          </div>
+        <AppSidebar
+          section={section}
+          setSection={setSection}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+          connConfig={connConfig}
+          onConnectionClick={() => setConnectionOpen(true)}
+          tablesCount={tables.length}
+          foldersCount={folders.length}
+        />
 
-          <nav className="flex-1 py-2 space-y-0.5 px-1.5">
-            {NAV_ITEMS.map(item => (
-              <button key={item.id} onClick={() => setSection(item.id)}
-                className={`w-full flex items-center gap-2.5 px-2 py-2 rounded text-left transition-all ${section === item.id ? 'bg-green-700 text-white' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}
-                title={sidebarCollapsed ? item.label : ''}>
-                <Icon name={item.icon as 'Table2'} size={15} className="flex-shrink-0" />
-                {!sidebarCollapsed && (
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium leading-tight">{item.label}</div>
-                    <div className="text-[10px] text-gray-400 leading-tight truncate">{item.desc}</div>
-                  </div>
-                )}
-              </button>
-            ))}
-          </nav>
-
-          {!sidebarCollapsed && (
-            <div className="p-3 border-t border-[#1e2332]">
-              <button onClick={() => setConnectionOpen(true)} className="w-full flex items-center gap-2 hover:opacity-80 transition-opacity text-left">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-blue-400' : 'bg-yellow-400'}`} />
-                <div className="min-w-0">
-                  <div className="text-white text-xs font-medium truncate">
-                    {connConfig.database ? connConfig.database : 'PostgreSQL'}
-                  </div>
-                  <div className="text-gray-400 text-[10px] truncate">
-                    {connConfig.database ? `${connConfig.host}:${connConfig.port}` : 'Не подключено'}
-                  </div>
-                </div>
-                <Icon name="Settings2" size={12} className="text-gray-500 flex-shrink-0 ml-auto" />
-              </button>
-              <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-2">
-                <Icon name="Database" size={10} />
-                <span>{tables.length} таблиц · {folders.length} папок</span>
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* Main content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-2 px-4 py-2 bg-white border-b text-xs text-gray-500 flex-shrink-0">
-            <Icon name="Home" size={12} />
-            <Icon name="ChevronRight" size={12} className="text-gray-300" />
-            <span className="font-medium text-gray-700">{NAV_ITEMS.find(n => n.id === section)?.label}</span>
-            {section === 'editor' && openTable && (
-              <>
-                <Icon name="ChevronRight" size={12} className="text-gray-300" />
-                <span className="flex items-center gap-1 text-green-700">
-                  <Icon name="FileSpreadsheet" size={11} className="text-green-600" />
-                  {openTable.name}
-                </span>
-              </>
-            )}
-            <div className="ml-auto flex items-center gap-3">
-              {loading && <span className="text-gray-400 flex items-center gap-1"><div className="w-2.5 h-2.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />Загрузка...</span>}
-              {loadError && <span className="text-red-500 text-xs" title={loadError}>Ошибка загрузки</span>}
-              {section === 'editor' && (
-                <>
-                  <span className="flex items-center gap-1 text-green-600">
-                    <Icon name="CheckCircle2" size={11} />
-                    Синхронизировано
-                  </span>
-                  <span className="text-gray-300">|</span>
-                </>
-              )}
-              <span className="text-gray-400">
-                {new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-hidden">
-            {section === 'tables' && (
-              <TablesSection
-                folders={folders}
-                tables={tables}
-                onOpenTable={handleOpenTable}
-                onFoldersChange={handleFoldersChange}
-                onImportClick={() => setSection('import')}
-              />
-            )}
-            {section === 'editor' && activeTableData && (
-              <TableEditor
-                tableData={activeTableData}
-                onTableChange={handleTableChange}
-                onlineUsers={[]}
-              />
-            )}
-            {section === 'editor' && !activeTableData && !loading && (
-              <div className="flex items-center justify-center h-full text-gray-400">
-                <div className="text-center">
-                  <Icon name="Table2" size={40} className="mx-auto mb-3 opacity-20" />
-                  <div className="text-sm">Выберите таблицу из раздела «Таблицы»</div>
-                </div>
-              </div>
-            )}
-            {section === 'relations' && (
-              <RelationsSection
-                relations={relations}
-                tables={tables}
-                tableData={activeTableData || { id: '', name: '', sheets: [], columns: [] }}
-                tableDataMap={tableDataMap}
-                onRelationsChange={handleRelationsChange}
-                onTableDataChange={handleTableChange}
-              />
-            )}
-            {section === 'reports' && (
-              <ReportsSection
-                reports={reports}
-                tables={tables}
-                relations={relations}
-                tableDataMap={tableDataMap}
-                onReportsChange={handleReportsChange}
-              />
-            )}
-            {section === 'import' && (
-              <ImportExportSection
-                tables={tables}
-                tableDataMap={tableDataMap}
-                onImportedTable={handleImportedTable}
-              />
-            )}
-          </div>
-        </main>
+        <MainContent
+          section={section}
+          setSection={setSection}
+          loading={loading}
+          loadError={loadError}
+          openTable={openTable}
+          activeTableData={activeTableData}
+          folders={folders}
+          tables={tables}
+          tableDataMap={tableDataMap}
+          relations={relations}
+          reports={reports}
+          onOpenTable={handleOpenTable}
+          onFoldersChange={handleFoldersChange}
+          onTableChange={handleTableChange}
+          onImportedTable={handleImportedTable}
+          onRelationsChange={handleRelationsChange}
+          onReportsChange={handleReportsChange}
+        />
       </div>
 
-      {/* Status bar */}
-      <footer className="flex items-center gap-4 px-4 h-6 bg-[#217346] text-white text-[11px] flex-shrink-0">
-        <button className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-          onClick={() => setConnectionOpen(true)} title="Настройка подключения к PostgreSQL">
-          <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-yellow-300' : connConfig.database ? 'bg-blue-300 animate-pulse' : 'bg-yellow-300'}`} />
-          <span>{loading ? 'Загрузка...' : connConfig.database ? `PostgreSQL · ${connConfig.host}/${connConfig.database}` : 'PostgreSQL · платформа'}</span>
-        </button>
-        <span className="text-green-200">·</span>
-        <span>{tables.length} таблиц · {folders.length} папок</span>
-        <div className="ml-auto flex items-center gap-3">
-          <span>Сохранено: {lastSaved}</span>
-        </div>
-      </footer>
+      <AppStatusBar
+        loading={loading}
+        connConfig={connConfig}
+        tablesCount={tables.length}
+        foldersCount={folders.length}
+        lastSaved={lastSaved}
+        onConnectionClick={() => setConnectionOpen(true)}
+      />
 
       <ConnectionDialog
         open={connectionOpen}
