@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Section, TableFile, Folder, TableData, Relation, Report } from '@/types';
-import { mockOnlineUsers } from '@/data/mockData';
 import TablesSection from '@/components/TablesSection';
 import TableEditor from '@/components/TableEditor';
 import RelationsSection from '@/components/RelationsSection';
@@ -86,7 +85,7 @@ const MENU_ITEMS: Record<string, { label: string; shortcut?: string; divider?: b
     { label: 'divider', divider: true },
     { label: 'О программе' },
     { label: 'divider', divider: true },
-    { label: 'Подключение к MySQL...' },
+    { label: 'Подключение к PostgreSQL...' },
   ],
 };
 
@@ -354,7 +353,7 @@ export default function Index() {
       if (item === 'Отчёты') setSection('reports');
       if (item === 'Свернуть боковую панель') setSidebarCollapsed(s => !s);
     }
-    if (item === 'Подключение к MySQL...') setConnectionOpen(true);
+    if (item === 'Подключение к PostgreSQL...') setConnectionOpen(true);
   };
 
   const handleSaveConnection = (cfg: ConnectionConfig) => {
@@ -409,26 +408,12 @@ export default function Index() {
 
         <div className="flex-1" />
 
-        {/* Online users */}
-        <div className="flex items-center gap-2">
-          <div className="flex -space-x-1">
-            {mockOnlineUsers.map(u => (
-              <div key={u.id}
-                className="w-6 h-6 rounded-full border-2 border-[#1e2332] flex items-center justify-center text-white text-[10px] font-bold cursor-default"
-                style={{ backgroundColor: u.color }} title={`${u.name} — активен`}>
-                {u.name.charAt(0)}
-              </div>
-            ))}
-          </div>
-          <span className="text-gray-400 text-xs">{mockOnlineUsers.length} онлайн</span>
-        </div>
-
         {/* DB connection button */}
         <button onClick={() => setConnectionOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors border border-transparent hover:border-white/20 hover:bg-white/10"
-          title="Настройка подключения к MySQL">
-          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-green-400' : 'bg-yellow-400'} animate-pulse`} />
-          <span className={connConfig.database ? 'text-green-300' : 'text-yellow-300'}>
+          title="Настройка подключения к PostgreSQL">
+          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-blue-400' : 'bg-yellow-400'} animate-pulse`} />
+          <span className={connConfig.database ? 'text-blue-300' : 'text-yellow-300'}>
             {connConfig.database ? `${connConfig.host}/${connConfig.database}` : 'Не подключено'}
           </span>
           <Icon name="Settings2" size={11} className="text-gray-400" />
@@ -471,16 +456,21 @@ export default function Index() {
 
           {!sidebarCollapsed && (
             <div className="p-3 border-t border-[#1e2332]">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-5 h-5 rounded-full bg-green-600 flex items-center justify-center text-white text-[10px] font-bold">В</div>
-                <div>
-                  <div className="text-white text-xs font-medium">Вы</div>
-                  <div className="text-gray-400 text-[10px]">Администратор</div>
+              <button onClick={() => setConnectionOpen(true)} className="w-full flex items-center gap-2 hover:opacity-80 transition-opacity text-left">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connConfig.database ? 'bg-blue-400' : 'bg-yellow-400'}`} />
+                <div className="min-w-0">
+                  <div className="text-white text-xs font-medium truncate">
+                    {connConfig.database ? connConfig.database : 'PostgreSQL'}
+                  </div>
+                  <div className="text-gray-400 text-[10px] truncate">
+                    {connConfig.database ? `${connConfig.host}:${connConfig.port}` : 'Не подключено'}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                <Icon name="Settings2" size={12} className="text-gray-500 flex-shrink-0 ml-auto" />
+              </button>
+              <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-2">
                 <Icon name="Database" size={10} />
-                <span>PostgreSQL · {tables.length} таблиц · {folders.length} папок</span>
+                <span>{tables.length} таблиц · {folders.length} папок</span>
               </div>
             </div>
           )}
@@ -534,7 +524,7 @@ export default function Index() {
               <TableEditor
                 tableData={activeTableData}
                 onTableChange={handleTableChange}
-                onlineUsers={mockOnlineUsers}
+                onlineUsers={[]}
               />
             )}
             {section === 'editor' && !activeTableData && !loading && (
@@ -578,18 +568,14 @@ export default function Index() {
       {/* Status bar */}
       <footer className="flex items-center gap-4 px-4 h-6 bg-[#217346] text-white text-[11px] flex-shrink-0">
         <button className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-          onClick={() => setConnectionOpen(true)} title="Настройка подключения">
-          <div className={`w-1.5 h-1.5 rounded-full ${!loading ? 'bg-green-300 animate-pulse' : 'bg-yellow-300'}`} />
-          <span>{loading ? 'Подключение...' : `PostgreSQL · ${tables.length} таблиц`}</span>
+          onClick={() => setConnectionOpen(true)} title="Настройка подключения к PostgreSQL">
+          <div className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-yellow-300' : connConfig.database ? 'bg-blue-300 animate-pulse' : 'bg-yellow-300'}`} />
+          <span>{loading ? 'Загрузка...' : connConfig.database ? `PostgreSQL · ${connConfig.host}/${connConfig.database}` : 'PostgreSQL · платформа'}</span>
         </button>
         <span className="text-green-200">·</span>
-        <span>{folders.length} папок</span>
-        <span className="text-green-200">·</span>
-        <span>{mockOnlineUsers.length} пользователей онлайн</span>
+        <span>{tables.length} таблиц · {folders.length} папок</span>
         <div className="ml-auto flex items-center gap-3">
-          <span>WebSocket: активен</span>
-          <span className="text-green-200">·</span>
-          <span>Режим: совместный</span>
+          <span>Сохранено: {lastSaved}</span>
         </div>
       </footer>
 

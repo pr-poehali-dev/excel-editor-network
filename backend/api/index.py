@@ -56,6 +56,9 @@ def handler(event: dict, context) -> dict:
     if action == 'seed' and method == 'POST':
         return seed_initial_data()
 
+    if action == 'test_pg' and method == 'POST':
+        return test_pg_connection(body)
+
     if resource == 'folders':
         if method == 'GET' and not rid:
             return get_folders()
@@ -606,3 +609,37 @@ def seed_initial_data():
 
         conn.commit()
     return ok({'status': 'seeded'})
+
+
+# ════════════════════════════════════════════════════
+# TEST EXTERNAL POSTGRESQL CONNECTION
+# ════════════════════════════════════════════════════
+
+def test_pg_connection(body):
+    """Проверяет подключение к внешнему PostgreSQL серверу пользователя."""
+    host = body.get('host', '')
+    port = body.get('port', '5432')
+    database = body.get('database', '')
+    user = body.get('user', '')
+    password = body.get('password', '')
+    ssl = body.get('ssl', False)
+
+    if not host or not database or not user:
+        return ok({'ok': False, 'error': 'Заполните хост, базу данных и пользователя'})
+
+    sslmode = 'require' if ssl else 'prefer'
+    try:
+        dsn = f"host={host} port={port} dbname={database} user={user} password={password} connect_timeout=8 sslmode={sslmode}"
+        conn = psycopg2.connect(dsn)
+        with conn.cursor() as cur:
+            cur.execute('SELECT version()')
+            row = cur.fetchone()
+            version_str = row[0] if row else ''
+            # Выделяем краткую версию: "PostgreSQL 15.3"
+            short_version = version_str.split(',')[0] if version_str else ''
+        conn.close()
+        return ok({'ok': True, 'version': short_version})
+    except psycopg2.OperationalError as e:
+        return ok({'ok': False, 'error': str(e).strip()})
+    except Exception as e:
+        return ok({'ok': False, 'error': f'Ошибка: {str(e)}'})
