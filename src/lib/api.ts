@@ -3,7 +3,7 @@
  * Все данные хранятся в PostgreSQL базе платформы.
  */
 
-const BASE_URL = 'https://functions.poehali.dev/ca159685-b975-4921-aa63-81df3c99b829';
+const BASE_URL = 'http://localhost:8000';
 
 async function request<T>(
   method: string,
